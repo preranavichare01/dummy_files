@@ -1,0 +1,43 @@
+.app-container {
+  max-width: 600px;
+  margin: 60px auto;
+  padding: 20px;
+  border: 2px solid #ccc;
+  border-radius: 12px;
+  background-color: #f9f9f9;
+  font-family: 'Segoe UI', sans-serif;
+  text-align: center;
+}
+
+input[type="file"],
+input[type="text"] {
+  display: block;
+  margin: 15px auto;
+  padding: 10px;
+  width: 90%;
+  font-size: 16px;
+}
+
+button {
+  background-color: #4CAF50;
+  color: white;
+  padding: 12px 20px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 16px;
+}
+
+button:hover {
+  background-color: #45a049;
+}
+
+.response {
+  margin-top: 20px;
+  text-align: left;
+  background: #fff;
+  padding: 15px;
+  border-radius: 8px;
+  box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+  white-space: pre-wrap;
+}
