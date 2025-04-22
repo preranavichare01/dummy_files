@@ -1,0 +1,1 @@
+python -c "import fastapi, uvicorn, transformers, torch, pandas, aiofiles; print('All packages are installed ✅')"
