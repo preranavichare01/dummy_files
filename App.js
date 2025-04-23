@@ -3,72 +3,49 @@ import axios from 'axios';
 
 function App() {
   const [file, setFile] = useState(null);
-  const [command, setCommand] = useState('');
-  const [response, setResponse] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [action, setAction] = useState('');
+  const [processedData, setProcessedData] = useState(null);
 
-  // Handle file selection
   const handleFileChange = (e) => {
     setFile(e.target.files[0]);
   };
 
-  // Handle command input change
-  const handleCommandChange = (e) => {
-    setCommand(e.target.value);
+  const handleActionChange = (e) => {
+    setAction(e.target.value);
   };
 
-  // Handle file upload and processing
-  const handleSubmit = async () => {
-    setLoading(true);
-    setError('');
-    
-    // Prepare form data for file upload
+  const handleSubmit = () => {
     const formData = new FormData();
-    formData.append('file', file);
-    formData.append('command', command);
+    formData.append("file", file);
+    formData.append("action", action);
 
-    try {
-      const res = await axios.post('http://localhost:8000/upload', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
+    axios.post('http://localhost:5000/process', formData)
+      .then(response => {
+        setProcessedData(response.data);
+      })
+      .catch(error => {
+        console.error("There was an error processing the file!", error);
       });
-      setResponse(res.data);
-    } catch (err) {
-      setError('Error uploading file. Please try again.');
-    } finally {
-      setLoading(false);
-    }
   };
 
   return (
-    <div className="App">
+    <div>
       <h1>Data Preprocessing Tool</h1>
       <input type="file" onChange={handleFileChange} />
-      <input
-        type="text"
-        placeholder="Enter command (e.g., 'clean dataset')"
-        value={command}
-        onChange={handleCommandChange}
-      />
-      <button onClick={handleSubmit} disabled={loading}>
-        {loading ? 'Processing...' : 'Submit'}
-      </button>
+      <select onChange={handleActionChange}>
+        <option value="remove_missing">Remove Missing Values</option>
+        <option value="impute">Impute Missing Values</option>
+        <option value="normalize">Normalize Data</option>
+        <option value="remove_duplicates">Remove Duplicates</option>
+      </select>
+      <button onClick={handleSubmit}>Submit</button>
 
-      {response && (
+      {processedData && (
         <div>
-          <h3>Processed Data Info:</h3>
-          <p>Rows: {response.rows}</p>
-          <p>Columns: {response.columns}</p>
-          <p>Command used: {response.command_used}</p>
-          <a href={response.download_url} download>
-            Download Processed File
-          </a>
+          <h2>Processed Data:</h2>
+          <pre>{JSON.stringify(processedData, null, 2)}</pre>
         </div>
       )}
-
-      {error && <p>{error}</p>}
     </div>
   );
 }
