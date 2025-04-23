@@ -1,71 +1,64 @@
-from fastapi import FastAPI, File, UploadFile, HTTPException
-from fastapi.responses import FileResponse
+import spacy
 import pandas as pd
-import os
-from transformers import pipeline
-from io import BytesIO
+from sklearn.impute import SimpleImputer
+from sklearn.preprocessing import StandardScaler
 
-# Initialize FastAPI app
-app = FastAPI()
+# Load SpaCy model
+nlp = spacy.load('en_core_web_sm')
 
-# Set up Hugging Face pipeline
-pipe = pipeline("text-generation", model="EleutherAI/gpt-neo-2.7B")
-
-# Folder to save processed data temporarily
-TEMP_DIR = "./processed_data"
-os.makedirs(TEMP_DIR, exist_ok=True)
-
-MAX_FILE_SIZE = 1024 * 1024 * 100  # 100MB
-
-# Function to process command
-def process_command(command: str):
-    response = pipe(command, max_length=100, num_return_sequences=1)
-    return response[0]['generated_text']
-
-@app.post("/upload")
-async def upload_file(file: UploadFile = File(...), command: str = ""):
-    # Check file size
-    if file.size > MAX_FILE_SIZE:
-        raise HTTPException(status_code=400, detail="File size exceeds the maximum limit (100MB).")
-
-    # Save the uploaded file temporarily
-    file_location = f"{TEMP_DIR}/{file.filename}"
-    with open(file_location, "wb") as f:
-        f.write(await file.read())
-
-    # Read the dataset using pandas
-    try:
-        df = pd.read_excel(file_location)
-    except Exception as e:
-        return {"error": f"Failed to read file: {str(e)}"}
-
-    # Process the command using Hugging Face model
-    processed_command = process_command(command)
-
-    # Example of how we could handle different commands
-    if "clean" in processed_command:
-        df.dropna(inplace=True)  # Drop missing values
-    if "preprocess" in processed_command:
-        df.fillna(df.mean(), inplace=True)  # Fill NaN with mean
-
-    # Save the processed file
-    processed_file = f"{TEMP_DIR}/processed_{file.filename}"
-    df.to_excel(processed_file, index=False)
-
-    return {
-        "message": "Data processed successfully!",
-        "rows": len(df),
-        "columns": len(df.columns),
-        "command_used": processed_command,
-        "download_url": f"/download/{processed_file.split('/')[-1]}"
-    }
-
-@app.get("/download/{file_name}")
-async def download_file(file_name: str):
-    # Ensure that the file exists
-    full_file_path = os.path.join(TEMP_DIR, file_name)
+# Function to process user input
+def process_input(user_input):
+    # Use SpaCy's NLP model to analyze user input
     
-    if os.path.exists(full_file_path):
-        return FileResponse(full_file_path, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", filename=file_name)
+    doc = nlp(user_input.lower())
+    if "remove missing" in user_input:
+        return "remove_missing"
+    elif "impute" in user_input:
+        return "impute"
+    elif "normalize" in user_input:
+        return "normalize"
+    elif "remove duplicates" in user_input:
+        return "remove_duplicates"
     else:
-        raise HTTPException(status_code=404, detail="File not found.")
+        return "unknown"
+
+# Preprocessing functions
+def preprocess_data(df, action):
+    if action == "remove_missing":
+        df.dropna(axis=0, how='any', inplace=True)
+    elif action == "impute":
+        imputer = SimpleImputer(strategy='mean')
+        df = pd.DataFrame(imputer.fit_transform(df), columns=df.columns)
+    elif action == "normalize":
+        scaler = StandardScaler()
+        df[df.select_dtypes(include=['float64', 'int64']).columns] = scaler.fit_transform(df[df.select_dtypes(include=['float64', 'int64']).columns])
+    elif action == "remove_duplicates":
+        df.drop_duplicates(inplace=True)
+    return df
+
+# File processing based on user input
+def load_data(file_path, file_type):
+    if file_type == 'csv':
+        df = pd.read_csv(file_path)
+    elif file_type == 'excel':
+        df = pd.read_excel(file_path)
+    elif file_type == 'json':
+        df = pd.read_json(file_path)
+    return df
+
+# Full processing flow
+def process_file(file_path, file_type, user_input):
+    df = load_data(file_path, file_type)
+    action = process_input(user_input)
+    if action != "unknown":
+        df = preprocess_data(df, action)
+        return df
+    else:
+        return "Unknown action. Please specify a valid preprocessing task."
+
+# Example usage
+file_path = 'user_data.csv'
+file_type = 'csv'
+user_input = "Remove missing values and normalize data"
+processed_df = process_file(file_path, file_type, user_input)
+print(processed_df.head())
