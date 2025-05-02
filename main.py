@@ -48,26 +48,39 @@ Important rules:
 def remove_leading_zeros(code: str) -> str:
     return re.sub(r'\b0+([1-9]\d*)\b', r'\1', code)
 
-def agentic_clean_with_code(file) -> pd.DataFrame:
+def agentic_clean_with_code(uploaded_file) -> pd.DataFrame:
     try:
-        df = pd.read_csv(file) if file.name.endswith(".csv") else pd.read_excel(file)
-        print("[INFO] File loaded. Sending preview to LLM...")
+        # Ensure the uploaded file is read correctly by checking its type
+        if uploaded_file.name.endswith(".csv"):
+            df = pd.read_csv(uploaded_file)
+        elif uploaded_file.name.endswith(".xlsx"):
+            df = pd.read_excel(uploaded_file)
+        else:
+            raise ValueError("Unsupported file type")
 
+        print("[INFO] File loaded successfully. Sending preview to LLM...")
+
+        # Initialize LLM and generate cleaning code
         llm = HuggingFaceLLM("mistralai/Mistral-7B-Instruct-v0.3")
         code = llm.generate_cleaning_code(df)
-        code = remove_leading_zeros(code)
+        code = remove_leading_zeros(code)  # Clean up the generated code
         code = code.replace("```python", "").replace("```", "").strip()  # Remove markdown if present
         print("[LLM] Generated Code:\n", code)
 
+        # Execute the generated code with error handling
         local_env = {"df": df.copy()}
-        exec(code, {}, local_env)
-        result_df = local_env.get("df", pd.DataFrame())
+        try:
+            exec(code, {}, local_env)
+            result_df = local_env.get("df", pd.DataFrame())
 
-        if not isinstance(result_df, pd.DataFrame):
-            raise ValueError("LLM code did not return a valid DataFrame.")
+            if not isinstance(result_df, pd.DataFrame):
+                raise ValueError("LLM code did not return a valid DataFrame.")
 
-        print("[INFO] Cleaning successful.")
-        return result_df
+            print("[INFO] Cleaning successful.")
+            return result_df
+        except Exception as e:
+            print(f"[ERROR] Failed to execute LLM code. Reason: {e}")
+            return pd.DataFrame()  # Return empty DataFrame on failure
 
     except Exception as e:
         print(f"[ERROR] LLM cleaning failed: {e}")
