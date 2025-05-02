@@ -1,111 +1,102 @@
 import os
-import tempfile
 import pandas as pd
-from dotenv import load_dotenv
-from groq import Groq
-import streamlit as st
 import re
+import streamlit as st
+from dotenv import load_dotenv
+from huggingface_hub import InferenceClient
 
-# Load environment variables
+# Load API key
 load_dotenv()
+HF_API_KEY = os.getenv("HF_API_KEY")
 
-# === Custom Groq wrapper ===
-class GroqChatLLM:
-    def __init__(self, model_name: str):
-        self.model_name = model_name
-        self.client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+# Hugging Face Wrapper
+class HuggingFaceLLM:
+    def __init__(self, model_id: str):
+        self.model_id = model_id
+        self.client = InferenceClient(model=model_id, token=HF_API_KEY)
 
-    def generate_response(self, message: str) -> str:
-        groq_response = self.client.chat.completions.create(
-            model=self.model_name,
-            messages=[{"role": "user", "content": message}],
-            temperature=0.2
-        )
-        if hasattr(groq_response, 'choices') and len(groq_response.choices) > 0:
-            return groq_response.choices[0].message.content
-        else:
-            raise ValueError("No valid response from Groq.")
+    def generate_cleaning_code(self, df: pd.DataFrame) -> str:
+        preview = df.head(10).to_csv(index=False)
+        schema = df.dtypes.to_string()
+        nulls = df.isnull().sum().to_string()
 
-# === Improved Data Cleaning ===
-def clean_data(df: pd.DataFrame) -> pd.DataFrame:
-    df.replace(["null", "None", "NaN", ""], pd.NA, inplace=True)
+        prompt = f"""
+You are a Python data cleaning expert.
+Below is a sample CSV preview of the dataset:
+{preview}
+
+Schema:
+{schema}
+
+Null values:
+{nulls}
+
+Write valid Python Pandas code to:
+- Drop duplicates
+- Fill missing values
+- Remove special characters from text columns
+- Ensure the result is assigned to a DataFrame named 'df'
+Only return code. No comments or markdown.
+"""
+        result = self.client.text_generation(prompt, max_new_tokens=512, temperature=0.1)
+        return result.strip()
+
+def remove_leading_zeros(code: str) -> str:
+    return re.sub(r'\b0+([1-9]\d*)\b', r'\1', code)
+
+def fallback_cleaning(df: pd.DataFrame) -> pd.DataFrame:
+    print("[Fallback] Cleaning in progress...")  # Log to terminal
+    df = df.copy()
     df.drop_duplicates(inplace=True)
+    first_row = df.iloc[[0]].copy()
+    rest = df.iloc[1:].copy()
 
-    for col in df.columns:
-        if pd.api.types.is_numeric_dtype(df[col]):
-            if "id" in col.lower() or "index" in col.lower():
-                df[col].fillna("Unknown", inplace=True)
-            else:
-                if df[col].skew() > 1:
-                    df[col].fillna(df[col].median(), inplace=True)
-                else:
-                    df[col].fillna(df[col].mean(), inplace=True)
-        elif pd.api.types.is_categorical_dtype(df[col]) or df[col].dtype == object:
-            df[col].fillna("Unknown", inplace=True)
-            # Remove unwanted characters
-            df[col] = df[col].astype(str).apply(lambda x: re.sub(r'[^\w\s]', '', x))
+    for col in rest.columns:
+        if rest[col].dtype == 'object':
+            rest[col] = rest[col].fillna('Unknown')
+            rest[col] = rest[col].astype(str).str.replace(r"[^a-zA-Z0-9 .,]", "", regex=True)
         else:
-            df[col].fillna(method='ffill', inplace=True)
+            rest[col] = rest[col].fillna(0)
+    return pd.concat([first_row, rest], ignore_index=True)
 
-    return df
-
-# === Groq-enhanced agentic cleaner ===
-def agentic_clean(file) -> pd.DataFrame:
+def agentic_clean_with_code(file) -> pd.DataFrame:
     try:
-        if file.name.endswith('.csv'):
-            df = pd.read_csv(file)
-        elif file.name.endswith(('.xls', '.xlsx')):
-            df = pd.read_excel(file)
-        else:
-            raise ValueError("Unsupported file type")
+        df = pd.read_csv(file) if file.name.endswith(".csv") else pd.read_excel(file)
+        print("[INFO] File loaded successfully.")
 
-        sample_data = df.head().to_csv(index=False)
-        summary = f"Column types:\n{df.dtypes.to_string()}\nMissing values:\n{df.isnull().sum().to_string()}"
+        llm = HuggingFaceLLM("mistralai/Mistral-7B-Instruct-v0.3")
+        code = llm.generate_cleaning_code(df)
+        code = remove_leading_zeros(code)
+        print("[LLM] Generated code:\n", code)
 
-        groq_message = (
-            f"You are a data cleaning assistant. Here's a preview of the user's dataset:\n"
-            f"{sample_data}\n\n{summary}\n"
-            f"Auto-fill missing values per column, clean dirty characters, and remove duplicates. "
-            f"Confirm your understanding."
-        )
-
-        groq_llm = GroqChatLLM(model_name="llama3-70b-8192")
-        groq_reply = groq_llm.generate_response(groq_message)
-        print("Groq LLM response:", groq_reply)
-
-        cleaned_df = clean_data(df)
-        return cleaned_df
+        local_env = {"df": df.copy()}
+        try:
+            exec(code, {}, local_env)
+            result_df = local_env.get("df", pd.DataFrame())
+            if not isinstance(result_df, pd.DataFrame):
+                raise ValueError("LLM code did not produce a DataFrame.")
+            print("[INFO] LLM code executed successfully.")
+            return result_df
+        except Exception as e:
+            print(f"[ERROR] LLM code failed. Using fallback. Reason: {e}")
+            return fallback_cleaning(df)
 
     except Exception as e:
-        print(f"Agentic cleaner failed: {e}")
+        print(f"[FATAL] Total failure: {e}")
         return pd.DataFrame()
 
-# === Streamlit Interface ===
+# Streamlit UI (Minimal)
 st.set_page_config(page_title="Agentic Cleaner", layout="centered")
-st.title("🧠 Agentic AI - CSV/Excel Cleaner")
+st.title(" Clean Ai Agent")
 
-uploaded_file = st.file_uploader("📤 Upload your CSV or Excel file", type=["csv", "xlsx"])
+uploaded_file = st.file_uploader("📤 Upload CSV or Excel", type=["csv", "xlsx"])
 
 if uploaded_file:
-    st.success("✅ File uploaded successfully!")
+    cleaned_df = agentic_clean_with_code(uploaded_file)
 
-    if st.button("🚀 Clean with Agent"):
-        try:
-            with st.spinner("Cleaning your file..."):
-                cleaned_df = agentic_clean(uploaded_file)
+    if not cleaned_df.empty:
+        st.success("✅ Preview of Cleaned Data ")
+        st.dataframe(cleaned_df.iloc[:10])  
 
-            if cleaned_df.empty:
-                st.error("⚠️ The cleaning agent failed or returned no data.")
-            else:
-                st.success("✅ Cleaning complete!")
-                st.dataframe(cleaned_df.head(10))
-
-                csv_data = cleaned_df.to_csv(index=False).encode('utf-8')
-                st.download_button(
-                    "📥 Download Cleaned CSV",
-                    data=csv_data,
-                    file_name="cleaned_data.csv",
-                    mime='text/csv'
-                )
-        except Exception as e:
-            st.error(f"Agent failed: {e}")
+        csv = cleaned_df.to_csv(index=False).encode("utf-8")
+        st.download_button("📥 Download Cleaned CSV", csv, "cleaned_data.csv", "text/csv")
