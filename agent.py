@@ -4,7 +4,7 @@ import re
 
 agent = ChatNVIDIA(
     model="mistralai/mistral-small-24b-instruct",
-    api_key="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",  # Replace with your NVIDIA API key
+    api_key="NVIDIA API key",  # Replace with your NVIDIA API key
     temperature=0.2,
     top_p=0.7,
     max_tokens=2048
