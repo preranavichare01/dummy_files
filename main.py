@@ -103,3 +103,10 @@ if uploaded_file:
         st.download_button("📥 Download Cleaned CSV", csv, "cleaned_data.csv", "text/csv")
     else:
         st.error("❌ Failed to clean the file. Please try again.")
+"""
+pandas
+openai
+langchain-nvidia-ai-endpoints
+python-dotenv
+openpyxl
+"""
