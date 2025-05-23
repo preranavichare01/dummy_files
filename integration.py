@@ -4,28 +4,33 @@ import pandas as pd
 def process_file(path: str, out_dir: str) -> (str, bool):
     fn = os.path.basename(path)
     try:
-        # Read file based on extension
+        # Read the file safely
         if fn.endswith(".csv"):
-            df = pd.read_csv(path)
-        elif fn.endswith((".xls", ".xlsx")):
-            df = pd.read_excel(path, engine='openpyxl')  # safer
+            try:
+                df = pd.read_csv(path, encoding='utf-8')  # Try UTF-8 first
+            except UnicodeDecodeError:
+                df = pd.read_csv(path, encoding='latin1')  # Fallback if UTF-8 fails
+        elif fn.endswith(".xls"):
+            df = pd.read_excel(path, engine='xlrd')  # .xls uses xlrd
+        elif fn.endswith(".xlsx"):
+            df = pd.read_excel(path, engine='openpyxl')  # .xlsx uses openpyxl
         elif fn.endswith(".json"):
             df = pd.read_json(path)
         else:
             raise ValueError("Unsupported format")
 
-        # Clean the data
+        # Your cleaning logic
         df_clean = process_with_agent(df)
 
-        # Run quality check
+        # Your quality check logic
         ok, _ = quality_check(df_clean)
 
-        # Output path with same format
+        # Set up output path
         out_path = os.path.join(out_dir, f"cleaned_{fn}")
 
-        # Save in same format
+        # Save the cleaned file based on format
         if fn.endswith(".csv"):
-            df_clean.to_csv(out_path, index=False)
+            df_clean.to_csv(out_path, index=False, encoding='utf-8-sig')  # utf-8-sig helps Excel read correctly
         elif fn.endswith((".xls", ".xlsx")):
             df_clean.to_excel(out_path, index=False, engine='openpyxl')
         elif fn.endswith(".json"):
