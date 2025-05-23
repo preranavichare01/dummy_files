@@ -285,3 +285,18 @@ def main():
 
 if __name__ == "__main__":
     main()
+"""# .env
+NVIDIA_CLEANING_KEY=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
+NVIDIA_QC_KEY=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
+NVIDIA_FEASIBILITY_KEY=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
+OPENAI_BASE_URL=https://integrate.api.nvidia.com/v1
+DATASET_FOLDER=test
+OUTPUT_FOLDER=cleaned
+"""
+"""
+pandas
+openai
+langchain-nvidia-ai-endpoints
+python-dotenv
+openpyxl
+"""
